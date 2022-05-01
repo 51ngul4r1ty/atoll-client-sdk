@@ -1,0 +1,26 @@
+{
+  "editor.rulers": [132],
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "node_modules": true,
+    ".yalc": true,
+    "out": false, // set this to true to hide the "out" folder with the compiled JS files
+    "dist": false // set this to true to hide the "dist" folder with the compiled JS files
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "coverage": true,
+    "out": true, // set this to false to include "out" folder in search results
+    "dist": true // set this to false to include "dist" folder in search results
+  },
+  "bookmarks.navigateThroughAllFiles": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "coverage-gutters.showGutterCoverage": true,
+  "coverage-gutters.coverageFileNames": ["lcov.info"],
+  "coverage-gutters.coverageReportFileName": "coverage/**/index.html",
+  "coverage-gutters.showLineCoverage": false,
+  "deno.enable": false,
+  "typescript.tsc.autoDetect": "on"
+}

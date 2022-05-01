@@ -1,0 +1,62 @@
+{
+  "Test: Arrange, Act, Assert": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\aaa",
+    "body": ["// arrange", "", "// act", "", "// assert", ""],
+    "description": "Add comments for each section in a test"
+  },
+  "Import Section: Actions": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\a",
+    "body": ["// actions", ""],
+    "description": "Add comment to define import section for action creators"
+  },
+  "Import Section: Components": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\c",
+    "body": ["// components", ""],
+    "description": "Add comment to define import section for components"
+  },
+  "Import Section: Consts/Enums": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\ce",
+    "body": ["// consts/enums", ""],
+    "description": "Add comment to define import section for consts/enums"
+  },
+  "Import Section: Data Access": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\d",
+    "body": ["// data access", ""],
+    "description": "Add comment to define import section for data access"
+  },
+  "Import Section: Interfaces/Types": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\it",
+    "body": ["// interfaces/types", ""],
+    "description": "Add comment to define import section for interfaces & types"
+  },
+  "Import Section: Libraries": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\l",
+    "body": ["// libraries", ""],
+    "description": "Add comment to define import section for internal libraries"
+  },
+  "Import Section: Selectors": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\s",
+    "body": ["// selectors", ""],
+    "description": "Add comment to define import section for selectors"
+  },
+  "Import Section: Utils": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\u",
+    "body": ["// utils", ""],
+    "description": "Add comment to define import section for utility functions"
+  },
+  "Import Section: Externals": {
+    "scope": "javascript,typescript,typescriptreact",
+    "prefix": "\\\\x",
+    "body": ["// externals", ""],
+    "description": "Add comment to define import section for interfaces & types"
+  }
+}

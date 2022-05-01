@@ -1,0 +1,51 @@
+{
+  "name": "@atoll/client-sdk",
+  "version": "0.1.8",
+  "description": "Atoll REST API client SDK",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "transpile": "tsc",
+    "build": "rollup -c",
+    "prepublishOnly": "npm run clean && npm run build && npm run test",
+    "watch": "rollup -cw",
+    "clean": "npx --no-install rimraf dist",
+    "test": "tsc --noEmit --project tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/51ngul4r1ty/atoll-api-types.git"
+  },
+  "author": {
+    "name": "Kevin Berry",
+    "email": "41717340+51ngul4r1ty@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.14.0",
+    "npm": ">=8.3.1"
+  },
+  "bugs": {
+    "url": "https://github.com/51ngul4r1ty/atoll-api-types/issues"
+  },
+  "homepage": "https://github.com/51ngul4r1ty/atoll-api-types#readme",
+  "peerDependencies": {
+    "axios": "0.27.2"
+  },
+  "devDependencies": {
+    "@atoll/api-types": "0.3.0",
+    "autoprefixer": "10.4.5",
+    "axios": "0.27.2",
+    "rimraf": "3.0.2",
+    "rollup": "2.71.1",
+    "rollup-plugin-json": "4.0.0",
+    "rollup-plugin-node-resolve": "5.2.0",
+    "rollup-plugin-typescript2": "0.31.2",
+    "typescript": "4.6.4"
+  }
+}
