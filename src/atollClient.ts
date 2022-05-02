@@ -8,14 +8,11 @@ export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";
 
 export class AtollClient {
-    private authToken: string | null;
-    private refreshToken: string | null;
-    private apiMap: { [key: string]: ApiMapItem } | null;
-    constructor() {
-        this.authToken = null;
-        this.refreshToken = null;
-        this.apiMap = null;
-    }
+    private connecting: boolean = false;
+    private authToken: string | null = null;
+    private refreshToken: string | null = null;
+    private apiMap: { [key: string]: ApiMapItem } | null = null;
+    constructor() {}
     private async getApiMap(hostBaseUrl: string): Promise<ApiMapItem[]> {
         const mapResponse = await axios.get(`${hostBaseUrl}${MAP_RELATIVE_URL}`, {
             headers: {
@@ -63,9 +60,13 @@ export class AtollClient {
      * @returns message if there's an error, otherwise null
      */
     public async connect(hostBaseUrl: string, username: string, password: string): Promise<string | null> {
+        if (this.connecting) {
+            throw new Error("Another connection is already in progress!");
+        }
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
         await this.buildApiMapIndex(canonicalHostBaseUrl);
         const authUrl = this.lookupUriFromApiMap("user-auth", "action");
+        this.connecting = true;
         try {
             const loginResponse = await axios.post(
                 `${canonicalHostBaseUrl}${authUrl}`,
@@ -80,11 +81,13 @@ export class AtollClient {
                     }
                 }
             );
+            this.connecting = false;
             const axiosResponseData = loginResponse.data as AuthServerResponse;
             this.authToken = axiosResponseData.data.item.authToken;
             this.refreshToken = axiosResponseData.data.item.refreshToken;
             return null;
         } catch (error) {
+            this.connecting = false;
             const errorTyped = error as AxiosError;
             if (!errorTyped) {
                 throw new Error("Unexpected condition in 'connect'- error is undefined");
@@ -115,5 +118,20 @@ export class AtollClient {
             }
             return `Atoll REST API error: ${status} - ${message}`;
         }
+    }
+    public disconnect() {
+        if (this.isConnecting()) {
+            throw new Error("Unable to disconnect while connection is being established!");
+        }
+        if (this.isConnected()) {
+            this.authToken = null;
+            this.refreshToken = null;
+        }
+    }
+    public isConnecting(): boolean {
+        return this.connecting;
+    }
+    public isConnected(): boolean {
+        return !!this.authToken;
     }
 }
