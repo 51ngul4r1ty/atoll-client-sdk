@@ -1,6 +1,6 @@
 {
   "name": "@atoll/client-sdk",
-  "version": "0.4.2",
+  "version": "0.8.0",
   "description": "Atoll REST API client SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.es.js",
@@ -38,7 +38,6 @@
     "axios": "0.27.2"
   },
   "devDependencies": {
-    "@atoll/api-types": "0.4.1",
     "autoprefixer": "10.4.5",
     "axios": "0.27.2",
     "rimraf": "3.0.2",
@@ -49,6 +48,7 @@
     "typescript": "4.6.4"
   },
   "dependencies": {
-    "@atoll/rest-fetch": "0.2.0"
+    "@atoll/api-types": "0.6.1",
+    "@atoll/rest-fetch": "0.4.1"
   }
 }

@@ -2,9 +2,14 @@
 import type {
     ApiMapItem,
     ApiMapServerResponse,
+    ApiResourceItemLink,
     AuthServerResponse,
     ProjectResourceItem,
-    ProjectsServerResponse
+    ProjectsServerResponse,
+    SprintBacklogItemsServerResponse,
+    SprintBacklogResourceItem,
+    SprintResourceItem,
+    SprintServerResponse
 } from "@atoll/api-types";
 
 // utils
@@ -16,11 +21,15 @@ export const MAP_RELATIVE_URL = "/api/v1";
 
 export class AtollClient {
     private connecting: boolean = false;
-    private authToken: string | null = null;
     private refreshToken: string | null = null;
     private apiMap: { [key: string]: ApiMapItem } | null = null;
     private canonicalHostBaseUrl: string | null = null;
     constructor() {}
+    /**
+     * Get an API Map to determine endpoints of resources on-the-fly.
+     * @param hostBaseUrl this is needed because this particular API call happens before the canonicalHostBaseUrl is set
+     * @returns An API Map list.
+     */
     private async getApiMap(hostBaseUrl: string): Promise<ApiMapItem[]> {
         const result = await restApi.get<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
         return result.data.items;
@@ -84,7 +93,7 @@ export class AtollClient {
         try {
             const response = await restApi.execAction<AuthServerResponse>(loginActionUri, loginPayload);
             this.connecting = false;
-            this.authToken = response.data.item.authToken;
+            restApi.setDefaultHeader("Authorization", `Bearer  ${response.data.item.authToken}`);
             this.refreshToken = response.data.item.refreshToken;
             this.canonicalHostBaseUrl = canonicalHostBaseUrl;
             return null;
@@ -98,7 +107,6 @@ export class AtollClient {
             throw new Error("Unable to disconnect while connection is being established!");
         }
         if (this.isConnected()) {
-            this.authToken = null;
             this.refreshToken = null;
         }
     }
@@ -106,11 +114,37 @@ export class AtollClient {
         return this.connecting;
     }
     public isConnected(): boolean {
-        return !!this.authToken;
+        return !!this.refreshToken;
     }
     public async fetchProjects(): Promise<ProjectResourceItem[]> {
-        const projectsUrl = this.lookupUriFromApiMap("projects", "collection");
-        const result = await restApi.get<ProjectsServerResponse>(projectsUrl);
+        const projectsUri = this.lookupUriFromApiMap("projects", "collection");
+        const result = await restApi.get<ProjectsServerResponse>(`${this.canonicalHostBaseUrl}${projectsUri}`);
         return result.data.items;
+    }
+    public async fetchSprintByUri(sprintUri: string): Promise<SprintResourceItem> {
+        const result = await restApi.get<SprintServerResponse>(`${this.canonicalHostBaseUrl}${sprintUri}`);
+        return result.data.item;
+    }
+    public async fetchSprintBacklogItemsByUri(sprintBacklogItemsUri: string): Promise<SprintBacklogResourceItem[]> {
+        const result = await restApi.get<SprintBacklogItemsServerResponse>(`${this.canonicalHostBaseUrl}${sprintBacklogItemsUri}`);
+        return result.data.items;
+    }
+    public findLinkByRel(links: ApiResourceItemLink[], rel: string): ApiResourceItemLink | null {
+        const matchingLinks = links.filter((link) => link.rel === rel);
+        const matchingLinkCount = matchingLinks.length;
+        if (matchingLinkCount === 0) {
+            return null;
+        } else if (matchingLinkCount > 1) {
+            throw new Error(`findLinkUrlByRel(links, "${rel}") matched ${matchingLinkCount} - expecting 1!`);
+        } else {
+            return matchingLinks[0];
+        }
+    }
+    public findLinkUriByRel(links: ApiResourceItemLink[], rel: string): string | null {
+        const link = this.findLinkByRel(links, rel);
+        if (link === null) {
+            return null;
+        }
+        return link.uri;
     }
 }
