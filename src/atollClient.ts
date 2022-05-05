@@ -1,28 +1,38 @@
-// externals
-import axios, { AxiosError } from "axios";
-
 // libraries
-import type { ApiMapItem, ApiMapServerResponse, AuthServerResponse, ServerErrorResponse } from "@atoll/api-types";
+import type {
+    ApiMapItem,
+    ApiMapServerResponse,
+    ApiResourceItemLink,
+    AuthServerResponse,
+    ProjectResourceItem,
+    ProjectsServerResponse,
+    SprintBacklogItemsServerResponse,
+    SprintBacklogResourceItem,
+    SprintResourceItem,
+    SprintServerResponse
+} from "@atoll/api-types";
+
+// utils
+import { restApi } from "./restApi";
+import { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
 
 export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";
 
 export class AtollClient {
     private connecting: boolean = false;
-    private authToken: string | null = null;
     private refreshToken: string | null = null;
     private apiMap: { [key: string]: ApiMapItem } | null = null;
+    private canonicalHostBaseUrl: string | null = null;
     constructor() {}
+    /**
+     * Get an API Map to determine endpoints of resources on-the-fly.
+     * @param hostBaseUrl this is needed because this particular API call happens before the canonicalHostBaseUrl is set
+     * @returns An API Map list.
+     */
     private async getApiMap(hostBaseUrl: string): Promise<ApiMapItem[]> {
-        const mapResponse = await axios.get(`${hostBaseUrl}${MAP_RELATIVE_URL}`, {
-            headers: {
-                "Cache-Control": "no-cache",
-                "Context-Type": "application/json",
-                Accept: "application/json"
-            }
-        });
-        const axiosData = mapResponse.data as ApiMapServerResponse;
-        return axiosData.data.items;
+        const result = await restApi.get<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
+        return result.data.items;
     }
     private lookupUriFromApiMap(id: string, rel: string): string {
         if (!this.apiMap) {
@@ -52,6 +62,16 @@ export class AtollClient {
         return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
     }
 
+    private buildErrorResult(error: any, functionName: string) {
+        const errorTyped = error as RestApiFetchError;
+        if (errorTyped.errorType === RestApiFetchErrorType.UnexpectedError) {
+            throw new Error(`${errorTyped.message} (${functionName})`);
+        }
+        const status = errorTyped.status;
+        const message = errorTyped.message;
+        return `Atoll REST API error: ${status} - ${message} (${functionName})`;
+    }
+
     /**
      * Authenticate user on the provided Atoll host server.
      * @param hostBaseUrl for example, https://atoll.yourdomain.com/
@@ -67,56 +87,19 @@ export class AtollClient {
         await this.buildApiMapIndex(canonicalHostBaseUrl);
         const authUrl = this.lookupUriFromApiMap("user-auth", "action");
         this.connecting = true;
+        const loginActionUri = `${canonicalHostBaseUrl}${authUrl}`;
+        const loginPayload = { username, password };
+
         try {
-            const loginResponse = await axios.post(
-                `${canonicalHostBaseUrl}${authUrl}`,
-                {
-                    username,
-                    password
-                },
-                {
-                    headers: {
-                        "Context-Type": "application/json",
-                        Accept: "application/json"
-                    }
-                }
-            );
+            const response = await restApi.execAction<AuthServerResponse>(loginActionUri, loginPayload);
             this.connecting = false;
-            const axiosResponseData = loginResponse.data as AuthServerResponse;
-            this.authToken = axiosResponseData.data.item.authToken;
-            this.refreshToken = axiosResponseData.data.item.refreshToken;
+            restApi.setDefaultHeader("Authorization", `Bearer  ${response.data.item.authToken}`);
+            this.refreshToken = response.data.item.refreshToken;
+            this.canonicalHostBaseUrl = canonicalHostBaseUrl;
             return null;
         } catch (error) {
             this.connecting = false;
-            const errorTyped = error as AxiosError;
-            if (!errorTyped) {
-                throw new Error("Unexpected condition in 'connect'- error is undefined");
-            }
-            const errorResponse = errorTyped.response;
-            if (!errorResponse) {
-                throw new Error(`Unexpected condition in 'connect'- error is "${error}"`);
-            }
-            const responseData = errorResponse.data as ServerErrorResponse;
-            if (!responseData) {
-                throw new Error(`Unexpected condition in 'connect'- error.response.data is undefined`);
-            }
-            const status = responseData.status;
-            const message = responseData.message;
-            if (!status && !message) {
-                if (typeof responseData === "string") {
-                    // not what we expected, but roll with it... maybe this is a legacy
-                    // API call result or maybe auto-generated because of an unhandled error?
-                    return errorResponse.data as string;
-                } else {
-                    try {
-                        const stringifiedErrorObj = JSON.stringify(error);
-                        return `Atoll REST API error: ${stringifiedErrorObj}`;
-                    } catch (error) {
-                        return "Unexpected coniditon in 'connect'- error is not simple object";
-                    }
-                }
-            }
-            return `Atoll REST API error: ${status} - ${message}`;
+            return this.buildErrorResult(error, "connect");
         }
     }
     public disconnect() {
@@ -124,7 +107,6 @@ export class AtollClient {
             throw new Error("Unable to disconnect while connection is being established!");
         }
         if (this.isConnected()) {
-            this.authToken = null;
             this.refreshToken = null;
         }
     }
@@ -132,6 +114,37 @@ export class AtollClient {
         return this.connecting;
     }
     public isConnected(): boolean {
-        return !!this.authToken;
+        return !!this.refreshToken;
+    }
+    public async fetchProjects(): Promise<ProjectResourceItem[]> {
+        const projectsUri = this.lookupUriFromApiMap("projects", "collection");
+        const result = await restApi.get<ProjectsServerResponse>(`${this.canonicalHostBaseUrl}${projectsUri}`);
+        return result.data.items;
+    }
+    public async fetchSprintByUri(sprintUri: string): Promise<SprintResourceItem> {
+        const result = await restApi.get<SprintServerResponse>(`${this.canonicalHostBaseUrl}${sprintUri}`);
+        return result.data.item;
+    }
+    public async fetchSprintBacklogItemsByUri(sprintBacklogItemsUri: string): Promise<SprintBacklogResourceItem[]> {
+        const result = await restApi.get<SprintBacklogItemsServerResponse>(`${this.canonicalHostBaseUrl}${sprintBacklogItemsUri}`);
+        return result.data.items;
+    }
+    public findLinkByRel(links: ApiResourceItemLink[], rel: string): ApiResourceItemLink | null {
+        const matchingLinks = links.filter((link) => link.rel === rel);
+        const matchingLinkCount = matchingLinks.length;
+        if (matchingLinkCount === 0) {
+            return null;
+        } else if (matchingLinkCount > 1) {
+            throw new Error(`findLinkUrlByRel(links, "${rel}") matched ${matchingLinkCount} - expecting 1!`);
+        } else {
+            return matchingLinks[0];
+        }
+    }
+    public findLinkUriByRel(links: ApiResourceItemLink[], rel: string): string | null {
+        const link = this.findLinkByRel(links, rel);
+        if (link === null) {
+            return null;
+        }
+        return link.uri;
     }
 }
