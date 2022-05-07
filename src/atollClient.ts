@@ -11,19 +11,21 @@ import type {
     SprintResourceItem,
     SprintServerResponse
 } from "@atoll/api-types";
+import type { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
+import { HostNotificationHandler } from "./atollClientTypes";
 
 // utils
-import { restApi } from "./restApi";
-import { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
+import { restApi, setupAuthFailureHandler } from "./restApi";
 
 export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";
 
 export class AtollClient {
     private connecting: boolean = false;
-    private refreshToken: string | null = null;
+    public refreshToken: string | null = null;
     private apiMap: { [key: string]: ApiMapItem } | null = null;
     private canonicalHostBaseUrl: string | null = null;
+    private notificationHandler: HostNotificationHandler | null = null;
     constructor() {}
     /**
      * Get an API Map to determine endpoints of resources on-the-fly.
@@ -58,6 +60,30 @@ export class AtollClient {
             this.apiMap[apiMapItem.id] = apiMapItem;
         });
     }
+    private async onAuthFailureNotification(refreshTokenUri: string): Promise<void> {
+        if (this.notificationHandler) {
+            await this.notificationHandler("Re-connecting to Atoll Server...", "info");
+        }
+    }
+    private async onRefreshTokenSuccessNotification(newAuthToken: string, newRefreshToken: string): Promise<void> {
+        if (this.notificationHandler) {
+            await this.notificationHandler("Re-connected to Atoll Server", "info");
+        }
+    }
+    private async onRefreshTokenFailureNotification(oldRefreshToken: string): Promise<void> {
+        if (this.notificationHandler) {
+            await this.notificationHandler("Unable to re-connect to Atoll Server - trying signing in again", "warn");
+        }
+    }
+    private setupRestApiHandlers() {
+        const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
+        setupAuthFailureHandler(
+            refreshTokenUri,
+            this.onAuthFailureNotification,
+            this.onRefreshTokenSuccessNotification,
+            this.onRefreshTokenFailureNotification
+        );
+    }
     private canonicalizeUrl(url: string): string {
         return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
     }
@@ -79,12 +105,20 @@ export class AtollClient {
      * @param password password for the provided username
      * @returns message if there's an error, otherwise null
      */
-    public async connect(hostBaseUrl: string, username: string, password: string): Promise<string | null> {
+    // TODO: Find a way to set up a "bridge" to send notifications back to the consumer (e.g. VS Code)
+    public async connect(
+        hostBaseUrl: string,
+        username: string,
+        password: string,
+        notificationHandler: HostNotificationHandler
+    ): Promise<string | null> {
         if (this.connecting) {
             throw new Error("Another connection is already in progress!");
         }
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
         await this.buildApiMapIndex(canonicalHostBaseUrl);
+        await this.setupRestApiHandlers();
+        this.notificationHandler = notificationHandler;
         const authUrl = this.lookupUriFromApiMap("user-auth", "action");
         this.connecting = true;
         const loginActionUri = `${canonicalHostBaseUrl}${authUrl}`;
