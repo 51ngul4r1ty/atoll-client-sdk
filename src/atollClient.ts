@@ -11,11 +11,13 @@ import type {
     SprintResourceItem,
     SprintServerResponse
 } from "@atoll/api-types";
-import type { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
+import { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
 import { HostNotificationHandler } from "./atollClientTypes";
+import type { DebugLog } from "./debugTypes";
 
 // utils
-import { restApi, setupAuthFailureHandler } from "./restApi";
+import { restApi } from "./restApi";
+import { isValidFullUri } from "./validationUtils";
 
 export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";
@@ -37,6 +39,13 @@ export class AtollClient {
         return result.data.items;
     }
     private lookupUriFromApiMap(id: string, rel: string): string {
+        if (!this.canonicalHostBaseUrl) {
+            throw new Error("Unable to look up a URI without the host base URL being set first!");
+        }
+        const uri = this.lookupRelativeUriFromApiMap(id, rel);
+        return `${this.canonicalHostBaseUrl}${uri}`;
+    }
+    private lookupRelativeUriFromApiMap(id: string, rel: string): string {
         if (!this.apiMap) {
             throw new Error("API Map needs to be retrieved first!");
         }
@@ -75,9 +84,41 @@ export class AtollClient {
             await this.notificationHandler("Unable to re-connect to Atoll Server - trying signing in again", "warn");
         }
     }
+    private async fetchAuthTokenUsingRefreshToken(refreshTokenUri: string): Promise<{ authToken: string; refreshToken: string }> {
+        const result = await restApi.execAction<AuthServerResponse>(
+            refreshTokenUri,
+            { refreshToken: this.refreshToken },
+            { skipRetryOnAuthFailure: true }
+        );
+        const { authToken, refreshToken } = result.data.item;
+        this.refreshToken = refreshToken;
+        restApi.setDefaultHeader("Authorization", `Bearer  ${authToken}`);
+        return {
+            authToken,
+            refreshToken
+        };
+    }
+    private setupAuthFailureHandler(
+        refreshTokenUri: string,
+        handleAuthFailureNotification: { (refreshTokenUri: string): Promise<void> },
+        handleRefreshTokenSuccessNotification: { (newAuthToken, newRefreshToken: string): Promise<void> },
+        handleRefreshTokenFailureNotification: { (oldRefreshToken: string): Promise<void> }
+    ) {
+        restApi.onAuthFailure = async () => {
+            await handleAuthFailureNotification(refreshTokenUri);
+            try {
+                const { authToken, refreshToken } = await this.fetchAuthTokenUsingRefreshToken(refreshTokenUri);
+                await handleRefreshTokenSuccessNotification(authToken, refreshToken);
+                return true;
+            } catch (error) {
+                await handleRefreshTokenFailureNotification(this.refreshToken);
+                return false;
+            }
+        };
+    }
     private setupRestApiHandlers() {
         const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
-        setupAuthFailureHandler(
+        this.setupAuthFailureHandler(
             refreshTokenUri,
             this.onAuthFailureNotification,
             this.onRefreshTokenSuccessNotification,
@@ -98,6 +139,55 @@ export class AtollClient {
         return `Atoll REST API error: ${status} - ${message} (${functionName})`;
     }
 
+    // TODO: Refactor out common code
+    public async setupWithRefreshToken(hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<DebugLog> {
+        const result: DebugLog = {
+            items: [],
+            errorResult: null
+        };
+        const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
+        this.canonicalHostBaseUrl = canonicalHostBaseUrl;
+        result.items.push({ message: `canonicalHostBaseUrl = ${canonicalHostBaseUrl}` });
+        try {
+            await this.buildApiMapIndex(canonicalHostBaseUrl);
+        } catch (err) {
+            result.items.push({ message: "buildApiMapIndex failed" });
+            result.errorResult = this.buildErrorResult(err, "commonSetup");
+            return result;
+        }
+        this.setupRestApiHandlers();
+        this.notificationHandler = notificationHandler;
+        try {
+            const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
+            result.items.push({ message: `refreshTokenURI = ${refreshTokenUri}` });
+            const currentRefreshToken = this.refreshToken;
+            const authServerResponse = await restApi.execAction<AuthServerResponse>(
+                refreshTokenUri,
+                { refreshToken: currentRefreshToken },
+                { skipRetryOnAuthFailure: true }
+            );
+            const { authToken, refreshToken } = authServerResponse.data.item;
+
+            restApi.setDefaultHeader("Authorization", `Bearer  ${authToken}`);
+            this.refreshToken = refreshToken;
+            result.items.push({ message: `successful- refreshToken = ${refreshToken}` });
+            return result;
+        } catch (error) {
+            result.items.push({ message: "error thrown" });
+            result.errorResult = this.buildErrorResult(error, "commonSetup");
+            return result;
+        }
+    }
+
+    public buildUriFromBaseAndRelative(baseUri: string, relativeUri: string): string {
+        return `${baseUri}${relativeUri}`;
+    }
+    public buildFullUri(relativeUri: string): string {
+        if (!this.canonicalHostBaseUrl) {
+            throw new Error("buildFullUri requires canonicalHostBaseUrl to be set first");
+        }
+        return this.buildUriFromBaseAndRelative(this.canonicalHostBaseUrl, relativeUri);
+    }
     /**
      * Authenticate user on the provided Atoll host server.
      * @param hostBaseUrl for example, https://atoll.yourdomain.com/
@@ -117,13 +207,14 @@ export class AtollClient {
         }
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
         await this.buildApiMapIndex(canonicalHostBaseUrl);
-        await this.setupRestApiHandlers();
+        this.setupRestApiHandlers();
         this.notificationHandler = notificationHandler;
-        const authUrl = this.lookupUriFromApiMap("user-auth", "action");
-        this.connecting = true;
-        const loginActionUri = `${canonicalHostBaseUrl}${authUrl}`;
+
+        const authUrl = this.lookupRelativeUriFromApiMap("user-auth", "action");
+        const loginActionUri = this.buildUriFromBaseAndRelative(canonicalHostBaseUrl, authUrl);
         const loginPayload = { username, password };
 
+        this.connecting = true;
         try {
             const response = await restApi.execAction<AuthServerResponse>(loginActionUri, loginPayload);
             this.connecting = false;
@@ -152,15 +243,22 @@ export class AtollClient {
     }
     public async fetchProjects(): Promise<ProjectResourceItem[]> {
         const projectsUri = this.lookupUriFromApiMap("projects", "collection");
-        const result = await restApi.get<ProjectsServerResponse>(`${this.canonicalHostBaseUrl}${projectsUri}`);
+        const result = await restApi.get<ProjectsServerResponse>(projectsUri);
         return result.data.items;
     }
+    private checkValidFullUri(functionName: string, uri: string) {
+        if (!isValidFullUri(uri)) {
+            throw new Error(`Invalid URI ${uri} passed to ${functionName}`);
+        }
+    }
     public async fetchSprintByUri(sprintUri: string): Promise<SprintResourceItem> {
-        const result = await restApi.get<SprintServerResponse>(`${this.canonicalHostBaseUrl}${sprintUri}`);
+        this.checkValidFullUri("fetchSprintByUri", sprintUri);
+        const result = await restApi.get<SprintServerResponse>(sprintUri);
         return result.data.item;
     }
     public async fetchSprintBacklogItemsByUri(sprintBacklogItemsUri: string): Promise<SprintBacklogResourceItem[]> {
-        const result = await restApi.get<SprintBacklogItemsServerResponse>(`${this.canonicalHostBaseUrl}${sprintBacklogItemsUri}`);
+        this.checkValidFullUri("fetchSprintBacklogItemsByUri", sprintBacklogItemsUri);
+        const result = await restApi.get<SprintBacklogItemsServerResponse>(sprintBacklogItemsUri);
         return result.data.items;
     }
     public findLinkByRel(links: ApiResourceItemLink[], rel: string): ApiResourceItemLink | null {
