@@ -11,9 +11,9 @@ import type {
     SprintResourceItem,
     SprintServerResponse
 } from "@atoll/api-types";
-import { RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
-import { HostNotificationHandler } from "./atollClientTypes";
-import type { DebugLog } from "./debugTypes";
+import type { RestApiFetchError } from "@atoll/rest-fetch";
+import type { HostNotificationHandler } from "./atollClientTypes";
+import { RestApiFetchErrorType } from "@atoll/rest-fetch";
 
 // utils
 import { restApi } from "./restApi";
@@ -140,26 +140,18 @@ export class AtollClient {
     }
 
     // TODO: Refactor out common code
-    public async setupWithRefreshToken(hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<DebugLog> {
-        const result: DebugLog = {
-            items: [],
-            errorResult: null
-        };
+    public async setupWithRefreshToken(hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<string> {
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
         this.canonicalHostBaseUrl = canonicalHostBaseUrl;
-        result.items.push({ message: `canonicalHostBaseUrl = ${canonicalHostBaseUrl}` });
         try {
             await this.buildApiMapIndex(canonicalHostBaseUrl);
         } catch (err) {
-            result.items.push({ message: "buildApiMapIndex failed" });
-            result.errorResult = this.buildErrorResult(err, "commonSetup");
-            return result;
+            return this.buildErrorResult(err, "commonSetup");
         }
         this.setupRestApiHandlers();
         this.notificationHandler = notificationHandler;
         try {
             const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
-            result.items.push({ message: `refreshTokenURI = ${refreshTokenUri}` });
             const currentRefreshToken = this.refreshToken;
             const authServerResponse = await restApi.execAction<AuthServerResponse>(
                 refreshTokenUri,
@@ -170,12 +162,9 @@ export class AtollClient {
 
             restApi.setDefaultHeader("Authorization", `Bearer  ${authToken}`);
             this.refreshToken = refreshToken;
-            result.items.push({ message: `successful- refreshToken = ${refreshToken}` });
-            return result;
+            return null;
         } catch (error) {
-            result.items.push({ message: "error thrown" });
-            result.errorResult = this.buildErrorResult(error, "commonSetup");
-            return result;
+            return this.buildErrorResult(error, "commonSetup");
         }
     }
 
