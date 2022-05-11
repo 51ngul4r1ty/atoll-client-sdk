@@ -191,7 +191,7 @@ export class AtollClient {
             () => ({ refreshToken: this.refreshToken })
         );
     };
-    public commonConnect = async (
+    private commonConnect = async (
         connectFunctionName: string,
         hostBaseUrl: string,
         notificationHandler: HostNotificationHandler,
