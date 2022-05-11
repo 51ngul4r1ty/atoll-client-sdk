@@ -65,7 +65,7 @@ export class AtollClient {
         }
         return matchingActions[0].uri;
     };
-    private buildApiMapIndex = async (hostBaseUrl: string) => {
+    private fetchApiMapAndBuildIndex = async (hostBaseUrl: string) => {
         const apiMapResponse = await this.getApiMap(hostBaseUrl);
         this.apiMap = {};
         apiMapResponse.forEach((apiMapItem) => {
@@ -103,32 +103,22 @@ export class AtollClient {
             refreshToken
         };
     };
-    private setupAuthFailureHandler = (
-        refreshTokenUri: string,
-        handleAuthFailureNotification: { (refreshTokenUri: string): Promise<void> },
-        handleRefreshTokenSuccessNotification: { (newAuthToken, newRefreshToken: string): Promise<void> },
-        handleRefreshTokenFailureNotification: { (oldRefreshToken: string): Promise<void> }
-    ) => {
+    private setupAuthFailureHandler = (refreshTokenUri: string) => {
         restApi.onAuthFailure = async () => {
-            await handleAuthFailureNotification(refreshTokenUri);
+            await this.onAuthFailureNotification(refreshTokenUri);
             try {
                 const { authToken, refreshToken } = await this.fetchAuthTokenUsingRefreshToken(refreshTokenUri);
-                await handleRefreshTokenSuccessNotification(authToken, refreshToken);
+                await this.onRefreshTokenSuccessNotification(authToken, refreshToken);
                 return true;
             } catch (error) {
-                await handleRefreshTokenFailureNotification(this.refreshToken);
+                await this.onRefreshTokenFailureNotification(this.refreshToken);
                 return false;
             }
         };
     };
-    private setupRestApiHandlers = () => {
+    private setupTokenRefresher = () => {
         const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
-        this.setupAuthFailureHandler(
-            refreshTokenUri,
-            this.onAuthFailureNotification,
-            this.onRefreshTokenSuccessNotification,
-            this.onRefreshTokenFailureNotification
-        );
+        this.setupAuthFailureHandler(refreshTokenUri);
     };
     private canonicalizeUrl = (url: string): string => {
         return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
@@ -171,8 +161,8 @@ export class AtollClient {
             throw new Error("Another connection is already in progress!");
         }
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
-        await this.buildApiMapIndex(canonicalHostBaseUrl);
-        this.setupRestApiHandlers();
+        await this.fetchApiMapAndBuildIndex(canonicalHostBaseUrl);
+        this.setupTokenRefresher();
         this.notificationHandler = notificationHandler;
 
         const authUrl = this.lookupRelativeUriFromApiMap("user-auth", "action");
@@ -194,14 +184,17 @@ export class AtollClient {
     };
     // TODO: Refactor out common code
     public connectWithRefreshToken = async (hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<string> => {
+        if (this.connecting) {
+            throw new Error("Another connection is already in progress!");
+        }
         const canonicalHostBaseUrl = this.canonicalizeUrl(hostBaseUrl);
         this.canonicalHostBaseUrl = canonicalHostBaseUrl;
         try {
-            await this.buildApiMapIndex(canonicalHostBaseUrl);
+            await this.fetchApiMapAndBuildIndex(canonicalHostBaseUrl);
         } catch (err) {
-            return this.buildErrorResult(err, "commonSetup");
+            return this.buildErrorResult(err, "connectWithRefreshToken");
         }
-        this.setupRestApiHandlers();
+        this.setupTokenRefresher();
         this.notificationHandler = notificationHandler;
         try {
             const refreshTokenUri = this.lookupUriFromApiMap("refresh-token", "action");
@@ -212,12 +205,14 @@ export class AtollClient {
                 { skipRetryOnAuthFailure: true }
             );
             const { authToken, refreshToken } = authServerResponse.data.item;
+            this.connecting = false;
 
             restApi.setDefaultHeader("Authorization", `Bearer  ${authToken}`);
             this.refreshToken = refreshToken;
             return null;
         } catch (error) {
-            return this.buildErrorResult(error, "commonSetup");
+            this.connecting = false;
+            return this.buildErrorResult(error, "connectWithRefreshToken");
         }
     };
 
