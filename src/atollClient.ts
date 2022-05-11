@@ -156,7 +156,6 @@ export class AtollClient {
      * @param password password for the provided username
      * @returns message if there's an error, otherwise null
      */
-    // TODO: Find a way to set up a "bridge" to send notifications back to the consumer (e.g. VS Code)
     public connect = async (
         hostBaseUrl: string,
         username: string,
