@@ -162,25 +162,31 @@ export class AtollClient {
         password: string,
         notificationHandler: HostNotificationHandler
     ): Promise<string | null> => {
-        const updateCanonicalHostBaseUrl = true;
         return this.commonConnect(
             "connect",
             hostBaseUrl,
             notificationHandler,
             { skipRetryOnAuthFailure: true },
-            updateCanonicalHostBaseUrl,
             () => this.lookupRelativeUriFromApiMap("user-auth", "action"),
             () => ({ username, password })
         );
     };
-    public connectWithRefreshToken = async (hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<string> => {
-        const updateCanonicalHostBaseUrl = false;
+    /**
+     * After "connect" has been used the client can cache the refresh token and use that to reconnect.  "refreshToken" is a public
+     * field that can/should be set before calling this.
+     * @param hostBaseUrl
+     * @param notificationHandler
+     * @returns
+     */
+    public reconnect = async (hostBaseUrl: string, notificationHandler: HostNotificationHandler): Promise<string> => {
+        if (!this.refreshToken) {
+            throw new Error("refreshToken should be set before using 'reconnect'");
+        }
         return this.commonConnect(
             "connect",
             hostBaseUrl,
             notificationHandler,
             {},
-            updateCanonicalHostBaseUrl,
             () => this.lookupRelativeUriFromApiMap("refresh-token", "action"),
             () => ({ refreshToken: this.refreshToken })
         );
@@ -190,7 +196,6 @@ export class AtollClient {
         hostBaseUrl: string,
         notificationHandler: HostNotificationHandler,
         authOptions: any,
-        updateCanonicalHostBaseUrl: boolean,
         getAuthUrl: () => string,
         buildAuthPayload: () => any
     ): Promise<string | null> => {
@@ -217,9 +222,7 @@ export class AtollClient {
             const { authToken, refreshToken } = authServerResponse.data.item;
             restApi.setDefaultHeader("Authorization", `Bearer  ${authToken}`);
             this.refreshToken = refreshToken;
-            if (updateCanonicalHostBaseUrl) {
-                this.canonicalHostBaseUrl = canonicalHostBaseUrl;
-            }
+            this.canonicalHostBaseUrl = canonicalHostBaseUrl;
             return null;
         } catch (error) {
             this.connecting = false;
