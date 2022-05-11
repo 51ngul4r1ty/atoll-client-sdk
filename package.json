@@ -1,6 +1,6 @@
 {
   "name": "@atoll/client-sdk",
-  "version": "0.8.0",
+  "version": "0.18.1",
   "description": "Atoll REST API client SDK",
   "main": "dist/index.cjs.js",
   "module": "dist/index.es.js",
@@ -15,7 +15,10 @@
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "watch": "rollup -cw",
     "clean": "npx --no-install rimraf dist",
-    "test": "tsc --noEmit --project tsconfig.json"
+    "test": "npm run test:tsc && npm run test:unit",
+    "test:unit": "jest --coverage",
+    "test:tsc": "tsc --noEmit --project tsconfig.json",
+    "coverage-report": "open ./coverage/lcov-report/index.html"
   },
   "repository": {
     "type": "git",
@@ -38,17 +41,25 @@
     "axios": "0.27.2"
   },
   "devDependencies": {
+    "@babel/core": "7.17.10",
+    "@babel/preset-env": "7.17.10",
+    "@babel/preset-typescript": "7.16.7",
+    "@types/jest": "27.5.0",
     "autoprefixer": "10.4.5",
     "axios": "0.27.2",
+    "jest-cli": "28.1.0",
+    "jest-environment-jsdom": "28.1.0",
     "rimraf": "3.0.2",
     "rollup": "2.71.1",
     "rollup-plugin-json": "4.0.0",
     "rollup-plugin-node-resolve": "5.2.0",
     "rollup-plugin-typescript2": "0.31.2",
+    "ts-node": "10.7.0",
     "typescript": "4.6.4"
   },
   "dependencies": {
     "@atoll/api-types": "0.6.1",
-    "@atoll/rest-fetch": "0.4.1"
+    "@atoll/rest-fetch": "0.9.0",
+    "http-status-codes": "2.2.0"
   }
 }
