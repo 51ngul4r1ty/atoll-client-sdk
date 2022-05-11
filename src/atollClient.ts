@@ -258,7 +258,6 @@ export class AtollClient {
             const result = await restApi.get<SprintServerResponse>(sprintUri);
             return result.data.item;
         } catch (err) {
-            // TODO: Fix this... errorType isn't present, so `isRestApiFetchError` fails!
             if (isRestApiFetchError(err)) {
                 if (err.status === StatusCodes.NOT_FOUND) {
                     return null;
