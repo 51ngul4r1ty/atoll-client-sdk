@@ -37,40 +37,19 @@ export class AtollClient {
      * @param hostBaseUrl this is needed because this particular API call happens before the canonicalHostBaseUrl is set
      * @returns An API Map list.
      */
-    private getApiMap = async (hostBaseUrl: string): Promise<ApiMapItem[]> => {
-        const result = await restApi.get<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
-        return result.data.items;
-    };
-    private lookupUriFromApiMap = (id: string, rel: string): string => {
-        if (!this.canonicalHostBaseUrl) {
-            throw new Error("Unable to look up a URI without the host base URL being set first!");
-        }
-        const uri = this.lookupRelativeUriFromApiMap(id, rel);
-        return `${this.canonicalHostBaseUrl}${uri}`;
-    };
-    private lookupRelativeUriFromApiMap = (id: string, rel: string): string => {
-        if (!this.apiMap) {
-            throw new Error("API Map needs to be retrieved first!");
-        }
-        const endpointMapItem = this.apiMap[id];
-        if (!endpointMapItem) {
-            throw new Error(`Unable to find API Map Item with ID "${id}"`);
-        }
-        const matchingActions = endpointMapItem.links.filter((link) => link.rel === rel);
-        if (matchingActions.length === 0) {
-            throw new Error(`Unable to find a matching API Map Item Link with rel "${rel}"`);
-        }
-        if (matchingActions.length > 1) {
-            throw new Error(`Found ${matchingActions.length} matching API Map Item Links with rel "${rel}"`);
-        }
-        return matchingActions[0].uri;
-    };
-    private fetchApiMapAndBuildIndex = async (hostBaseUrl: string) => {
-        const apiMapResponse = await this.getApiMap(hostBaseUrl);
-        this.apiMap = {};
-        apiMapResponse.forEach((apiMapItem) => {
-            this.apiMap[apiMapItem.id] = apiMapItem;
-        });
+    // #region notification handler related
+    private setupAuthFailureHandler = (refreshTokenUri: string) => {
+        restApi.onAuthFailure = async () => {
+            await this.onAuthFailureNotification(refreshTokenUri);
+            try {
+                const { authToken, refreshToken } = await this.fetchAuthTokenUsingRefreshToken(refreshTokenUri);
+                await this.onRefreshTokenSuccessNotification(authToken, refreshToken);
+                return true;
+            } catch (error) {
+                await this.onRefreshTokenFailureNotification(this.refreshToken);
+                return false;
+            }
+        };
     };
     private onAuthFailureNotification = async (refreshTokenUri: string): Promise<void> => {
         if (this.notificationHandler) {
@@ -87,6 +66,8 @@ export class AtollClient {
             await this.notificationHandler("Unable to re-connect to Atoll Server - trying signing in again", "warn");
         }
     };
+    // #endregion
+    // #region auth related
     private fetchAuthTokenUsingRefreshToken = async (
         refreshTokenUri: string
     ): Promise<{ authToken: string; refreshToken: string }> => {
@@ -103,19 +84,6 @@ export class AtollClient {
             refreshToken
         };
     };
-    private setupAuthFailureHandler = (refreshTokenUri: string) => {
-        restApi.onAuthFailure = async () => {
-            await this.onAuthFailureNotification(refreshTokenUri);
-            try {
-                const { authToken, refreshToken } = await this.fetchAuthTokenUsingRefreshToken(refreshTokenUri);
-                await this.onRefreshTokenSuccessNotification(authToken, refreshToken);
-                return true;
-            } catch (error) {
-                await this.onRefreshTokenFailureNotification(this.refreshToken);
-                return false;
-            }
-        };
-    };
     private setupTokenRefresher = (canonicalHostBaseUrl?: string) => {
         let refreshTokenUri: string;
         if (canonicalHostBaseUrl) {
@@ -126,29 +94,8 @@ export class AtollClient {
         }
         this.setupAuthFailureHandler(refreshTokenUri);
     };
-    private canonicalizeUrl = (url: string): string => {
-        return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
-    };
-
-    private buildErrorResult = (error: any, functionName: string) => {
-        const errorTyped = error as RestApiFetchError;
-        if (errorTyped.errorType === RestApiFetchErrorType.UnexpectedError) {
-            throw new Error(`${errorTyped.message} (${functionName})`);
-        }
-        const status = errorTyped.status;
-        const message = errorTyped.message;
-        return `Atoll REST API error: ${status} - ${message} (${functionName})`;
-    };
-
-    public buildUriFromBaseAndRelative = (baseUri: string, relativeUri: string): string => {
-        return `${baseUri}${relativeUri}`;
-    };
-    public buildFullUri = (relativeUri: string): string => {
-        if (!this.canonicalHostBaseUrl) {
-            throw new Error("buildFullUri requires canonicalHostBaseUrl to be set first");
-        }
-        return this.buildUriFromBaseAndRelative(this.canonicalHostBaseUrl, relativeUri);
-    };
+    // #endregion
+    // #region connection related
     /**
      * Authenticate user on the provided Atoll host server.
      * @param hostBaseUrl for example, https://atoll.yourdomain.com/
@@ -229,7 +176,6 @@ export class AtollClient {
             return this.buildErrorResult(error, connectFunctionName);
         }
     };
-
     public disconnect = () => {
         if (this.isConnecting()) {
             throw new Error("Unable to disconnect while connection is being established!");
@@ -244,15 +190,93 @@ export class AtollClient {
     public isConnected = (): boolean => {
         return !!this.refreshToken;
     };
-    public fetchProjects = async (): Promise<ProjectResourceItem[]> => {
-        const projectsUri = this.lookupUriFromApiMap("projects", "collection");
-        const result = await restApi.get<ProjectsServerResponse>(projectsUri);
+    // #endregion
+    // #region utils
+    private getApiMap = async (hostBaseUrl: string): Promise<ApiMapItem[]> => {
+        const result = await restApi.get<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
         return result.data.items;
+    };
+    private lookupUriFromApiMap = (id: string, rel: string): string => {
+        if (!this.canonicalHostBaseUrl) {
+            throw new Error("Unable to look up a URI without the host base URL being set first!");
+        }
+        const uri = this.lookupRelativeUriFromApiMap(id, rel);
+        return `${this.canonicalHostBaseUrl}${uri}`;
+    };
+    private lookupRelativeUriFromApiMap = (id: string, rel: string): string => {
+        if (!this.apiMap) {
+            throw new Error("API Map needs to be retrieved first!");
+        }
+        const endpointMapItem = this.apiMap[id];
+        if (!endpointMapItem) {
+            throw new Error(`Unable to find API Map Item with ID "${id}"`);
+        }
+        const matchingActions = endpointMapItem.links.filter((link) => link.rel === rel);
+        if (matchingActions.length === 0) {
+            throw new Error(`Unable to find a matching API Map Item Link with rel "${rel}"`);
+        }
+        if (matchingActions.length > 1) {
+            throw new Error(`Found ${matchingActions.length} matching API Map Item Links with rel "${rel}"`);
+        }
+        return matchingActions[0].uri;
+    };
+    private fetchApiMapAndBuildIndex = async (hostBaseUrl: string) => {
+        const apiMapResponse = await this.getApiMap(hostBaseUrl);
+        this.apiMap = {};
+        apiMapResponse.forEach((apiMapItem) => {
+            this.apiMap[apiMapItem.id] = apiMapItem;
+        });
+    };
+    private canonicalizeUrl = (url: string): string => {
+        return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
+    };
+    private buildErrorResult = (error: any, functionName: string) => {
+        const errorTyped = error as RestApiFetchError;
+        if (errorTyped.errorType === RestApiFetchErrorType.UnexpectedError) {
+            throw new Error(`${errorTyped.message} (${functionName})`);
+        }
+        const status = errorTyped.status;
+        const message = errorTyped.message;
+        return `Atoll REST API error: ${status} - ${message} (${functionName})`;
+    };
+    public buildUriFromBaseAndRelative = (baseUri: string, relativeUri: string): string => {
+        return `${baseUri}${relativeUri}`;
+    };
+    public buildFullUri = (relativeUri: string): string => {
+        if (!this.canonicalHostBaseUrl) {
+            throw new Error("buildFullUri requires canonicalHostBaseUrl to be set first");
+        }
+        return this.buildUriFromBaseAndRelative(this.canonicalHostBaseUrl, relativeUri);
     };
     private checkValidFullUri = (functionName: string, uri: string) => {
         if (!isValidFullUri(uri)) {
             throw new Error(`Invalid URI ${uri} passed to ${functionName}`);
         }
+    };
+    public findLinkByRel = (links: ApiResourceItemLink[], rel: string): ApiResourceItemLink | null => {
+        const matchingLinks = links.filter((link) => link.rel === rel);
+        const matchingLinkCount = matchingLinks.length;
+        if (matchingLinkCount === 0) {
+            return null;
+        } else if (matchingLinkCount > 1) {
+            throw new Error(`findLinkUrlByRel(links, "${rel}") matched ${matchingLinkCount} - expecting 1!`);
+        } else {
+            return matchingLinks[0];
+        }
+    };
+    public findLinkUriByRel = (links: ApiResourceItemLink[], rel: string): string | null => {
+        const link = this.findLinkByRel(links, rel);
+        if (link === null) {
+            return null;
+        }
+        return link.uri;
+    };
+    // #endregion
+    // #region manipulating resources
+    public fetchProjects = async (): Promise<ProjectResourceItem[]> => {
+        const projectsUri = this.lookupUriFromApiMap("projects", "collection");
+        const result = await restApi.get<ProjectsServerResponse>(projectsUri);
+        return result.data.items;
     };
     public fetchSprintByUri = async (sprintUri: string): Promise<SprintResourceItem | null> => {
         this.checkValidFullUri("fetchSprintByUri", sprintUri);
@@ -273,22 +297,5 @@ export class AtollClient {
         const result = await restApi.get<SprintBacklogItemsServerResponse>(sprintBacklogItemsUri);
         return result.data.items;
     };
-    public findLinkByRel = (links: ApiResourceItemLink[], rel: string): ApiResourceItemLink | null => {
-        const matchingLinks = links.filter((link) => link.rel === rel);
-        const matchingLinkCount = matchingLinks.length;
-        if (matchingLinkCount === 0) {
-            return null;
-        } else if (matchingLinkCount > 1) {
-            throw new Error(`findLinkUrlByRel(links, "${rel}") matched ${matchingLinkCount} - expecting 1!`);
-        } else {
-            return matchingLinks[0];
-        }
-    };
-    public findLinkUriByRel = (links: ApiResourceItemLink[], rel: string): string | null => {
-        const link = this.findLinkByRel(links, rel);
-        if (link === null) {
-            return null;
-        }
-        return link.uri;
-    };
+    // #endregion
 }
