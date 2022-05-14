@@ -9,6 +9,7 @@ import type {
     AuthServerResponse,
     ProjectResourceItem,
     ProjectsServerResponse,
+    SprintBacklogItemServerResponse,
     SprintBacklogItemsServerResponse,
     SprintBacklogResourceItem,
     SprintResourceItem,
@@ -21,6 +22,8 @@ import { RestApiFetchErrorType } from "@atoll/rest-fetch";
 // utils
 import { restApi } from "./restApi";
 import { isValidFullUri } from "./validationUtils";
+import { backlogItemStatusToString } from "./mappers";
+import { BacklogItemStatus } from "@atoll/rich-types";
 
 export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";
@@ -193,7 +196,7 @@ export class AtollClient {
     // #endregion
     // #region utils
     private getApiMap = async (hostBaseUrl: string): Promise<ApiMapItem[]> => {
-        const result = await restApi.get<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
+        const result = await restApi.read<ApiMapServerResponse>(`${hostBaseUrl}${MAP_RELATIVE_URL}`);
         return result.data.items;
     };
     private lookupUriFromApiMap = (id: string, rel: string): string => {
@@ -275,13 +278,13 @@ export class AtollClient {
     // #region manipulating resources
     public fetchProjects = async (): Promise<ProjectResourceItem[]> => {
         const projectsUri = this.lookupUriFromApiMap("projects", "collection");
-        const result = await restApi.get<ProjectsServerResponse>(projectsUri);
+        const result = await restApi.read<ProjectsServerResponse>(projectsUri);
         return result.data.items;
     };
     public fetchSprintByUri = async (sprintUri: string): Promise<SprintResourceItem | null> => {
         this.checkValidFullUri("fetchSprintByUri", sprintUri);
         try {
-            const result = await restApi.get<SprintServerResponse>(sprintUri);
+            const result = await restApi.read<SprintServerResponse>(sprintUri);
             return result.data.item;
         } catch (err) {
             if (isRestApiFetchError(err)) {
@@ -294,8 +297,16 @@ export class AtollClient {
     };
     public fetchSprintBacklogItemsByUri = async (sprintBacklogItemsUri: string): Promise<SprintBacklogResourceItem[]> => {
         this.checkValidFullUri("fetchSprintBacklogItemsByUri", sprintBacklogItemsUri);
-        const result = await restApi.get<SprintBacklogItemsServerResponse>(sprintBacklogItemsUri);
+        const result = await restApi.read<SprintBacklogItemsServerResponse>(sprintBacklogItemsUri);
         return result.data.items;
+    };
+    public updateBacklogItemPartStatusByUri = async (backlogItemPartUri: string, status: BacklogItemStatus) => {
+        this.checkValidFullUri("updateBacklogItemPartStatusByUri", backlogItemPartUri);
+        const payload = {
+            status: backlogItemStatusToString(status)
+        };
+        const result = await restApi.patch<SprintBacklogItemServerResponse>(backlogItemPartUri, payload);
+        return result.data.item;
     };
     // #endregion
 }
