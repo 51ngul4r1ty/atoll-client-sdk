@@ -15,15 +15,16 @@ import type {
     SprintResourceItem,
     SprintServerResponse
 } from "@atoll/api-types";
-import { isRestApiFetchError, RestApiFetchError } from "@atoll/rest-fetch";
+import { BacklogItemStatus } from "@atoll/rich-types";
+import { isRestApiFetchError, RestApiFetchError, RestApiFetchErrorType } from "@atoll/rest-fetch";
+
+// interfaces/types
 import type { HostNotificationHandler } from "./atollClientTypes";
-import { RestApiFetchErrorType } from "@atoll/rest-fetch";
 
 // utils
 import { restApi } from "./restApi";
 import { isValidFullUri } from "./validationUtils";
 import { backlogItemStatusToString } from "./mappers";
-import { BacklogItemStatus } from "@atoll/rich-types";
 
 export const LOGIN_RELATIVE_URL = "/api/v1/actions/login";
 export const MAP_RELATIVE_URL = "/api/v1";

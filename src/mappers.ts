@@ -1,4 +1,4 @@
-// consts/enums
+// libraries
 import { BacklogItemStatus } from "@atoll/rich-types";
 
 export const backlogItemStatusToString = (backlogItemStatus: BacklogItemStatus): string | null => {
